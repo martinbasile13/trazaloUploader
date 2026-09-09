@@ -9,9 +9,26 @@ import { deleteMediaRouter } from './routes/deleteMedia.js'
 
 const app = express()
 
+// Vite elige un puerto libre distinto cada vez que el 5173 está ocupado, así
+// que fijar un puerto de localhost en ALLOWED_ORIGIN se rompe solo. En vez
+// de eso, cualquier http://localhost:* pasa siempre; todo lo demás tiene que
+// estar en la lista explícita (el dominio real de producción).
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true
+  if (config.allowedOrigins.includes('*')) return true
+  if (config.allowedOrigins.includes(origin)) return true
+
+  try {
+    const { hostname, protocol } = new URL(origin)
+    return protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1')
+  } catch {
+    return false
+  }
+}
+
 app.use(
   cors({
-    origin: config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins,
+    origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
   }),
 )
 app.use(express.json({ limit: '1mb' }))
