@@ -19,5 +19,7 @@ export const config = {
   r2BucketName: required('R2_BUCKET_NAME'),
   r2PublicBaseUrl: required('R2_PUBLIC_BASE_URL').replace(/\/$/, ''),
 
-  allowedOrigin: process.env.ALLOWED_ORIGIN ?? '*',
+  // Lista separada por comas — permite probar desde localhost sin sacar la
+  // producción de la lista (ej. "https://trazaloapp.com,http://localhost:5173")
+  allowedOrigins: (process.env.ALLOWED_ORIGIN ?? '*').split(',').map((o) => o.trim()),
 }

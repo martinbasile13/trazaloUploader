@@ -9,7 +9,11 @@ import { deleteMediaRouter } from './routes/deleteMedia.js'
 
 const app = express()
 
-app.use(cors({ origin: config.allowedOrigin }))
+app.use(
+  cors({
+    origin: config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins,
+  }),
+)
 app.use(express.json({ limit: '1mb' }))
 
 app.use(healthRouter)
