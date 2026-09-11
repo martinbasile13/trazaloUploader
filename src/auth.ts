@@ -20,10 +20,25 @@ export async function requireUser(req: Request): Promise<string> {
   return data.user.id
 }
 
+// Mismo mecanismo que is_admin() en Postgres (admin_users sin policy propia,
+// solo legible con service_role), pero de este lado: el dashboard interno de
+// Trazalo (admin.trazaloapp.com) necesita poder limpiar archivos de
+// cualquier negocio al borrarlo, no solo del suyo propio.
+async function isAdminUser(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('admin_users')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return Boolean(data)
+}
+
 // No hay RLS documentada para replicar (no existe en el repo de trazaloApp),
 // así que el chequeo de ownership se re-implementa acá a mano: este endpoint
 // pasa a ser el perímetro de seguridad que antes cubría Supabase Storage.
 export async function assertOwnsProject(userId: string, businessId: string, projectId: string): Promise<void> {
+  if (await isAdminUser(userId)) return   // admin de Trazalo: puede operar sobre cualquier negocio
+
   const { data: business, error: businessError } = await supabaseAdmin
     .from('businesses')
     .select('id')
