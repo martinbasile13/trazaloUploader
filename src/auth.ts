@@ -33,29 +33,66 @@ async function isAdminUser(userId: string): Promise<boolean> {
   return Boolean(data)
 }
 
-// No hay RLS documentada para replicar (no existe en el repo de trazaloApp),
-// así que el chequeo de ownership se re-implementa acá a mano: este endpoint
-// pasa a ser el perímetro de seguridad que antes cubría Supabase Storage.
+// Permite operar sobre el proyecto a:
+// 1. Admins de Trazalo (admin_users).
+// 2. Dueño del negocio (businesses.owner_id o business_members con role 'owner').
+// 3. Administradores/Encargados del negocio (business_members con role 'admin').
+// 4. Colaboradores/Operarios asignados a la obra (project_assignments).
 export async function assertOwnsProject(userId: string, businessId: string, projectId: string): Promise<void> {
   if (await isAdminUser(userId)) return   // admin de Trazalo: puede operar sobre cualquier negocio
 
-  const { data: business, error: businessError } = await supabaseAdmin
-    .from('businesses')
-    .select('id')
-    .eq('id', businessId)
-    .eq('owner_id', userId)
-    .maybeSingle()
-
-  if (businessError) throw new HttpError(500, 'Error verificando el negocio')
-  if (!business) throw new HttpError(403, 'No sos dueño de este negocio')
-
+  // 1. Verificar que el proyecto exista y pertenezca al negocio indicado
   const { data: project, error: projectError } = await supabaseAdmin
     .from('projects')
-    .select('id')
+    .select('id, business_id')
     .eq('id', projectId)
     .eq('business_id', businessId)
     .maybeSingle()
 
   if (projectError) throw new HttpError(500, 'Error verificando el proyecto')
-  if (!project) throw new HttpError(403, 'El proyecto no pertenece a ese negocio')
+  if (!project) throw new HttpError(404, 'El proyecto no pertenece a ese negocio')
+
+  // 2. Si es el dueño del negocio en la tabla businesses, tiene acceso completo
+  const { data: business, error: businessError } = await supabaseAdmin
+    .from('businesses')
+    .select('owner_id')
+    .eq('id', businessId)
+    .maybeSingle()
+
+  if (businessError) throw new HttpError(500, 'Error verificando el negocio')
+  if (!business) throw new HttpError(404, 'Negocio no encontrado')
+
+  if (business.owner_id === userId) {
+    return
+  }
+
+  // 3. Verificar si es miembro activo del equipo (Plan Pyme)
+  const { data: member, error: memberError } = await supabaseAdmin
+    .from('business_members')
+    .select('role, status')
+    .eq('business_id', businessId)
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (memberError) throw new HttpError(500, 'Error verificando membresía del equipo')
+  if (!member) throw new HttpError(403, 'No pertenecés a este negocio')
+
+  // Dueño o Administrador/Encargado tienen acceso a todas las obras del negocio
+  if (member.role === 'admin' || member.role === 'owner') {
+    return
+  }
+
+  // Colaborador/Operario: debe estar asignado a este proyecto específico
+  const { data: assignment, error: assignError } = await supabaseAdmin
+    .from('project_assignments')
+    .select('user_id')
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (assignError) throw new HttpError(500, 'Error verificando asignación de obra')
+  if (!assignment) {
+    throw new HttpError(403, 'No estás asignado a este trabajo')
+  }
 }
