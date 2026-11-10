@@ -6,6 +6,7 @@ import { healthRouter } from './routes/health.js'
 import { presignRouter } from './routes/presign.js'
 import { processVideoRouter } from './routes/processVideo.js'
 import { deleteMediaRouter } from './routes/deleteMedia.js'
+import { multipartRouter } from './routes/multipart.js'
 
 const app = express()
 
@@ -37,6 +38,7 @@ app.use(healthRouter)
 app.use(presignRouter)
 app.use(processVideoRouter)
 app.use(deleteMediaRouter)
+app.use(multipartRouter)
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {

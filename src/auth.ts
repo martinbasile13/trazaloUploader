@@ -1,14 +1,10 @@
 import type { Request } from 'express'
 import { supabaseAuth, supabaseAdmin } from './supabase.js'
+import { HttpError } from './errors.js'
 
-export class HttpError extends Error {
-  status: number
-
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
+// HttpError vive en errors.ts (sin dependencias) para poder testear lógica
+// sin cargar Supabase; se reexporta acá para no cambiar los imports existentes.
+export { HttpError } from './errors.js'
 
 export async function requireUser(req: Request): Promise<string> {
   const header = req.header('authorization') ?? ''

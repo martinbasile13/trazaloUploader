@@ -15,8 +15,41 @@ Repo separado y público a propósito: EasyPanel solo admite un token de GitHub 
 | POST | `/presign` | Devuelve una URL prefirmada de R2 para subir un archivo (foto, thumbnail, o video crudo) |
 | POST | `/process-video` | Encola el transcode de un video crudo ya subido a R2 |
 | POST | `/delete` | Borra objeto(s) de R2 |
+| GET | `/capabilities` | Sin auth. `{ multipart: true, partSizeBytes, maxFileBytes }` para detectar subida por partes |
+| POST | `/multipart/create` | Inicia una subida por partes; devuelve `uploadId`, `storagePath`, `totalParts` |
+| POST | `/multipart/part-urls` | URLs firmadas (1 h) para subir partes concretas (máx. 20 por llamada) |
+| POST | `/multipart/list-parts` | Partes ya subidas, para reanudar |
+| POST | `/multipart/complete` | Cierra la subida (el servidor lee los ETags); 409 con `missingParts` si falta alguna |
+| POST | `/multipart/abort` | Cancela la subida (idempotente) |
 
 Todos (salvo `/health`) requieren `Authorization: Bearer <access token de Supabase>` y validan que el `businessId`/`projectId` pertenezcan al usuario del token antes de hacer nada — ver `src/auth.ts`.
+
+## Subida por partes (multipart)
+
+Para archivos grandes (video hasta 150 MB): el cliente parte el archivo en bloques de 8 MiB (`partSizeBytes`), sube cada uno directo a R2 con URL firmada y reintenta solo los que fallan. Todos los endpoints `/multipart/*` llevan `Authorization: Bearer ...` y `businessId`/`projectId` en el body; `storagePath` debe estar bajo `media/<businessId>/<projectId>/` o `raw/<businessId>/<projectId>/`.
+
+Flujo:
+
+```text
+GET  /capabilities                         -> { multipart: true, partSizeBytes: 8388608, maxFileBytes: 157286400 }
+POST /multipart/create   { businessId, projectId, updateId, filename, contentType, kind, sizeBytes }
+                                           -> { uploadId, storagePath, publicUrl|null, partSizeBytes, totalParts }
+POST /multipart/part-urls { businessId, projectId, storagePath, uploadId, partNumbers: [1,2,3] }
+                                           -> { urls: [{ partNumber, url }] }
+PUT  <url>  (cuerpo = bytes de la parte; la parte N cubre [(N-1)*partSize, N*partSize))
+POST /multipart/list-parts { ... }         -> { parts: [{ partNumber, size }] }   (para reanudar)
+POST /multipart/complete  { ..., totalParts } -> { storagePath, publicUrl|null }
+                                           -> 409 { error, missingParts: [..] } si falta alguna
+POST /multipart/abort     { ... }          -> { aborted: true }
+```
+
+Después de `complete` con `kind: "video-raw"` se sigue igual que antes: `POST /process-video` con `rawStoragePath = storagePath`. El navegador no necesita leer el `ETag` de cada parte (el CORS del bucket no lo expone): `complete` lo obtiene del lado servidor. El CORS del bucket debe permitir `PUT` (ya requerido hoy).
+
+## Tests
+
+```bash
+npm test   # node --test + tsx, sin dependencias nuevas
+```
 
 ## Desarrollo local
 
